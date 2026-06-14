@@ -401,61 +401,64 @@
       }
     }
 
-    // --- RENDER & DOWNLOAD ---
-    async function renderAndDownload() {
+    // --- RENDER IMAGE ---
+    async function renderPhotoBlob() {
       if (!photoData) {
-        showToast('Foto belum tersedia, silakan ambil atau upload dulu.');
-        return;
+        throw new Error('Foto belum tersedia.');
       }
 
+      const canvas = document.createElement('canvas');
+      canvas.width = OUTPUT_WIDTH;
+      canvas.height = OUTPUT_HEIGHT;
+      const ctx = canvas.getContext('2d');
+
+      if (!ctx) {
+        throw new Error('Canvas tidak tersedia di browser ini.');
+      }
+
+      const photo = await loadImage(photoData);
+      const wrapper = document.getElementById('editorWrapper');
+      const scaleRatio = OUTPUT_WIDTH / Math.max(wrapper.clientWidth, 1);
+
+      const targetRatio = OUTPUT_WIDTH / OUTPUT_HEIGHT;
+      const sourceRatio = photo.naturalWidth / photo.naturalHeight;
+
+      let sx = 0;
+      let sy = 0;
+      let sw = photo.naturalWidth;
+      let sh = photo.naturalHeight;
+
+      if (sourceRatio > targetRatio) {
+        sw = photo.naturalHeight * targetRatio;
+        sx = (photo.naturalWidth - sw) / 2;
+      } else {
+        sh = photo.naturalWidth / targetRatio;
+        sy = (photo.naturalHeight - sh) / 2;
+      }
+
+      ctx.save();
+      ctx.translate(OUTPUT_WIDTH / 2 + transform.x * scaleRatio, OUTPUT_HEIGHT / 2 + transform.y * scaleRatio);
+      ctx.scale(transform.scale, transform.scale);
+      ctx.rotate(transform.rotation * Math.PI / 180);
+      ctx.drawImage(photo, sx, sy, sw, sh, -OUTPUT_WIDTH / 2, -OUTPUT_HEIGHT / 2, OUTPUT_WIDTH, OUTPUT_HEIGHT);
+      ctx.restore();
+
+      if (FRAME_URL) {
+        const frame = await loadImage(FRAME_URL);
+        ctx.drawImage(frame, 0, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT);
+      }
+
+      return await new Promise((resolve, reject) => {
+        canvas.toBlob((result) => result ? resolve(result) : reject(new Error('Gagal membuat file gambar.')), 'image/png');
+      });
+    }
+
+    // --- RENDER & DOWNLOAD ---
+    async function renderAndDownload() {
       document.getElementById('loadingOverlay').style.display = 'flex';
 
       try {
-        const canvas = document.createElement('canvas');
-        canvas.width = OUTPUT_WIDTH;
-        canvas.height = OUTPUT_HEIGHT;
-        const ctx = canvas.getContext('2d');
-
-        if (!ctx) {
-          throw new Error('Canvas tidak tersedia di browser ini.');
-        }
-
-        const photo = await loadImage(photoData);
-        const wrapper = document.getElementById('editorWrapper');
-        const scaleRatio = OUTPUT_WIDTH / Math.max(wrapper.clientWidth, 1);
-
-        const targetRatio = OUTPUT_WIDTH / OUTPUT_HEIGHT;
-        const sourceRatio = photo.naturalWidth / photo.naturalHeight;
-
-        let sx = 0;
-        let sy = 0;
-        let sw = photo.naturalWidth;
-        let sh = photo.naturalHeight;
-
-        if (sourceRatio > targetRatio) {
-          sw = photo.naturalHeight * targetRatio;
-          sx = (photo.naturalWidth - sw) / 2;
-        } else {
-          sh = photo.naturalWidth / targetRatio;
-          sy = (photo.naturalHeight - sh) / 2;
-        }
-
-        ctx.save();
-        ctx.translate(OUTPUT_WIDTH / 2 + transform.x * scaleRatio, OUTPUT_HEIGHT / 2 + transform.y * scaleRatio);
-        ctx.scale(transform.scale, transform.scale);
-        ctx.rotate(transform.rotation * Math.PI / 180);
-        ctx.drawImage(photo, sx, sy, sw, sh, -OUTPUT_WIDTH / 2, -OUTPUT_HEIGHT / 2, OUTPUT_WIDTH, OUTPUT_HEIGHT);
-        ctx.restore();
-
-        if (FRAME_URL) {
-          const frame = await loadImage(FRAME_URL);
-          ctx.drawImage(frame, 0, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT);
-        }
-
-        const blob = await new Promise((resolve, reject) => {
-          canvas.toBlob((result) => result ? resolve(result) : reject(new Error('Gagal membuat file gambar.')), 'image/png');
-        });
-
+        const blob = await renderPhotoBlob();
         const dataUrl = URL.createObjectURL(blob);
         const preview = document.getElementById('previewImg');
         preview.src = dataUrl;
@@ -491,9 +494,41 @@
     }
 
     // --- SHARE ---
-    function shareWhatsApp() {
-      const text = encodeURIComponent('🎓 Photobooth Wisuda SDIT ICMA - SMART GENERATION ✨');
-      window.open(`https://wa.me/?text=${text}`, '_blank');
+    async function shareWhatsApp() {
+      if (!photoData) {
+        showToast('Foto belum tersedia, silakan ambil atau upload dulu.');
+        return;
+      }
+
+      document.getElementById('loadingOverlay').style.display = 'flex';
+
+      try {
+        const blob = await renderPhotoBlob();
+        const file = new File([blob], 'Wisuda_SDIT_ICMA.png', { type: 'image/png' });
+        const shareText = '🎓 Hasil photobooth saya dari SDIT ICMA!\n\nCoba juga di: ' + window.location.href;
+
+        if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            title: 'Photobooth Wisuda SDIT ICMA',
+            text: shareText,
+            files: [file]
+          });
+          showToast('Berhasil membuka opsi berbagi WhatsApp.');
+          return;
+        }
+
+        const whatsappUrl = 'https://wa.me/?text=' + encodeURIComponent(shareText);
+        window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+        showToast('WhatsApp dibuka. Silakan bagikan foto hasil photobooth dari opsi yang tersedia.');
+      } catch (error) {
+        if (error && error.name === 'AbortError') return;
+        console.error(error);
+        const fallbackText = '🎓 Hasil photobooth saya dari SDIT ICMA!\n\nCoba juga di: ' + window.location.href;
+        window.open('https://wa.me/?text=' + encodeURIComponent(fallbackText), '_blank', 'noopener,noreferrer');
+        showToast('WhatsApp dibuka dengan link hasil photobooth.');
+      } finally {
+        document.getElementById('loadingOverlay').style.display = 'none';
+      }
     }
 
     // --- TOAST ---
