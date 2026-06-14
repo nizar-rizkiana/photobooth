@@ -422,13 +422,29 @@
 
         const photo = await loadImage(photoData);
         const wrapper = document.getElementById('editorWrapper');
-        const scaleRatio = OUTPUT_WIDTH / Math.max(wrapper.offsetWidth, 1);
+        const scaleRatio = OUTPUT_WIDTH / Math.max(wrapper.clientWidth, 1);
+
+        const targetRatio = OUTPUT_WIDTH / OUTPUT_HEIGHT;
+        const sourceRatio = photo.naturalWidth / photo.naturalHeight;
+
+        let sx = 0;
+        let sy = 0;
+        let sw = photo.naturalWidth;
+        let sh = photo.naturalHeight;
+
+        if (sourceRatio > targetRatio) {
+          sw = photo.naturalHeight * targetRatio;
+          sx = (photo.naturalWidth - sw) / 2;
+        } else {
+          sh = photo.naturalWidth / targetRatio;
+          sy = (photo.naturalHeight - sh) / 2;
+        }
 
         ctx.save();
         ctx.translate(OUTPUT_WIDTH / 2 + transform.x * scaleRatio, OUTPUT_HEIGHT / 2 + transform.y * scaleRatio);
         ctx.scale(transform.scale, transform.scale);
         ctx.rotate(transform.rotation * Math.PI / 180);
-        ctx.drawImage(photo, -OUTPUT_WIDTH / 2, -OUTPUT_HEIGHT / 2, OUTPUT_WIDTH, OUTPUT_HEIGHT);
+        ctx.drawImage(photo, sx, sy, sw, sh, -OUTPUT_WIDTH / 2, -OUTPUT_HEIGHT / 2, OUTPUT_WIDTH, OUTPUT_HEIGHT);
         ctx.restore();
 
         if (FRAME_URL) {
